@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Family Task Tracker</title>
+<link rel="icon" href="icons/icon-checkmark.svg" type="image/svg+xml">
+<link rel="alternate icon" href="icons/favicon.ico">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="topbar">
+    <button id="home-btn">Home</button>
+    <a class="button" href="login.html">Login</a>
+  </div>
+
+  <main>
+    <h1>Today's Tasks</h1>
+
+    <div class="date-picker">
+      <select id="date-select">
+        <option value="">Select a date&hellip;</option>
+      </select>
+    </div>
+
+    <div id="tabs" class="tabs"></div>
+
+    <div id="task-area"></div>
+
+    <p class="footer-note">More Coming Soon</p>
+  </main>
+
+  <script src="js/api.js"></script>
+  <script src="js/public.js"></script>
+</body>
+</html>

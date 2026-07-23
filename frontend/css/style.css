@@ -1,0 +1,181 @@
+:root {
+  --bg: #f7f5f0;
+  --card-bg: #ffffff;
+  --ink: #2c2a26;
+  --muted: #8a8578;
+  --accent: #3f7a5c;
+  --accent-dark: #2f5e46;
+  --danger: #b5473a;
+  --border: #e4e0d6;
+  font-size: 18px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  min-height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.5rem;
+}
+
+.topbar button, .topbar a.button {
+  font-size: 1rem;
+  padding: 0.6rem 1.2rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--ink);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.topbar a.button:hover, .topbar button:hover { background: var(--border); }
+
+main {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 1rem 1.5rem 4rem;
+}
+
+h1 { text-align: center; font-size: 1.6rem; margin-bottom: 1.5rem; }
+
+.date-picker {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 2rem;
+}
+
+select, input, button.primary {
+  font-size: 1.1rem;
+  padding: 0.6rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+button.primary {
+  background: var(--accent);
+  color: white;
+  border: none;
+  cursor: pointer;
+}
+
+button.primary:hover { background: var(--accent-dark); }
+
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+.tab {
+  padding: 0.6rem 1.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.tab.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.task-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+.task-row {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.8rem 0.3rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 1.2rem;
+}
+
+.task-row:last-child { border-bottom: none; }
+
+.task-row input[type="checkbox"] {
+  width: 1.6rem;
+  height: 1.6rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.task-text { cursor: pointer; }
+
+.task-row.checked .task-text {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.footer-note {
+  text-align: center;
+  color: var(--muted);
+  margin-top: 2rem;
+  font-style: italic;
+}
+
+.empty-state {
+  text-align: center;
+  color: var(--muted);
+  padding: 2rem;
+}
+
+/* Login / dashboard */
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 2rem;
+  max-width: 420px;
+  margin: 3rem auto;
+}
+
+.card h2 { margin-top: 0; }
+
+.field { margin-bottom: 1.1rem; display: flex; flex-direction: column; gap: 0.4rem; }
+.field label { font-size: 0.95rem; color: var(--muted); }
+
+.error-text { color: var(--danger); margin-top: 0.5rem; }
+
+.section {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.section h2 { margin-top: 0; font-size: 1.25rem; }
+
+table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--border); }
+th { color: var(--muted); font-weight: 600; }
+
+.row-actions { display: flex; gap: 0.4rem; }
+.row-actions button { font-size: 0.85rem; padding: 0.3rem 0.6rem; cursor: pointer; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); }
+.row-actions button.danger { color: var(--danger); border-color: var(--danger); }
+
+.inline-form { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-top: 0.8rem; }
+.inline-form input, .inline-form select { flex: 1; min-width: 120px; }
+
+.tag { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 999px; background: var(--border); font-size: 0.8rem; }
+.tag.admin { background: #e7d9c9; }
+.tag.manager { background: #d9e7df; }

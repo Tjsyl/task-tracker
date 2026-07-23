@@ -1,0 +1,14 @@
+# LAN-only -- no TLS/domain needed, just serve on the local network on port 80.
+:80 {
+	# API requests go to the FastAPI backend container.
+	handle /api/* {
+		reverse_proxy backend:8000
+	}
+
+	# Everything else is the static frontend.
+	handle {
+		root * /srv/frontend
+		file_server
+		try_files {path} /index.html
+	}
+}

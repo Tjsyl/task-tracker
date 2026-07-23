@@ -1,0 +1,30 @@
+services:
+  backend:
+    build: ./backend
+    container_name: task-tracker-backend
+    restart: unless-stopped
+    environment:
+      # Change this to a long random string before first run in production.
+      - TASK_TRACKER_SECRET_KEY=${TASK_TRACKER_SECRET_KEY:-change-me-please-a-long-random-string}
+    volumes:
+      # Bind mount (not a named volume) so the SQLite file is visible/backup-able
+      # from Unraid's array under appdata, like any other container's data.
+      - ${TASK_TRACKER_APPDATA:-/mnt/user/appdata/task-tracker}/data:/data
+    expose:
+      - "8000"
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: task-tracker-caddy
+    restart: unless-stopped
+    ports:
+      # Unraid's own web GUI owns host port 80/443 -- publish on 8080 instead
+      # (or override TASK_TRACKER_PORT in .env if 8080 is already taken).
+      - "${TASK_TRACKER_PORT:-8080}:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./frontend:/srv/frontend:ro
+      - ${TASK_TRACKER_APPDATA:-/mnt/user/appdata/task-tracker}/caddy-data:/data
+      - ${TASK_TRACKER_APPDATA:-/mnt/user/appdata/task-tracker}/caddy-config:/config
+    depends_on:
+      - backend

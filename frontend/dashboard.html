@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard &mdash; Family Task Tracker</title>
+<link rel="icon" href="icons/icon-checkmark.svg" type="image/svg+xml">
+<link rel="alternate icon" href="icons/favicon.ico">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="topbar">
+    <a class="button" href="index.html">Home</a>
+    <div>
+      <span id="whoami" style="margin-right:1rem; color:var(--muted);"></span>
+      <button id="logout-btn">Log out</button>
+    </div>
+  </div>
+
+  <main>
+    <h1>Manager / Admin Dashboard</h1>
+
+    <div class="section">
+      <h2>Create a task list</h2>
+      <form id="create-list-form" class="inline-form">
+        <input id="new-list-name" placeholder="List name (e.g. Kid1)" required>
+        <input id="new-list-date" type="date" required>
+        <input id="new-list-tasks" placeholder="Tasks, comma-separated (optional)">
+        <button type="submit" class="primary">Create</button>
+      </form>
+    </div>
+
+    <div class="section">
+      <h2>Task lists</h2>
+      <div id="lists-container">Loading&hellip;</div>
+    </div>
+
+    <div class="section" id="admin-section" style="display:none;">
+      <h2>User accounts (admin only)</h2>
+      <div id="users-container">Loading&hellip;</div>
+      <form id="create-user-form" class="inline-form">
+        <input id="new-username" placeholder="Username" required>
+        <input id="new-user-pin" placeholder="6-digit PIN" inputmode="numeric" pattern="\d{6}" maxlength="6" required>
+        <select id="new-user-role">
+          <option value="manager">Manager</option>
+          <option value="admin">Admin</option>
+        </select>
+        <button type="submit" class="primary">Add user</button>
+      </form>
+    </div>
+
+    <div class="section" id="global-audit-section" style="display:none;">
+      <h2>Full audit trail (admin only)</h2>
+      <div id="global-audit-container">Loading&hellip;</div>
+    </div>
+  </main>
+
+  <script src="js/api.js"></script>
+  <script src="js/dashboard.js"></script>
+</body>
+</html>
