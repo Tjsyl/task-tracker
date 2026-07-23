@@ -77,6 +77,46 @@ class Task(Base):
         return bool(self.children)
 
 
+class TaskListTemplate(Base):
+    """A reusable, saved task structure -- no dates or checked state, just the
+    shape of a list (names + subtasks) so a manager can spin up a new dated
+    TaskList from it repeatedly (e.g. a recurring "Kid1 morning routine").
+    Created either from scratch or by saving an existing TaskList's current
+    structure (see manager.py's save-as-template endpoint)."""
+    __tablename__ = "task_list_templates"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    creator = relationship("User")
+    tasks = relationship("TemplateTask", back_populates="template", cascade="all, delete-orphan")
+
+
+class TemplateTask(Base):
+    """A task within a template. Mirrors Task's parent/child shape (single
+    level of nesting) but has no checked state -- templates are just shape,
+    not progress."""
+    __tablename__ = "template_tasks"
+
+    id = Column(Integer, primary_key=True)
+    template_id = Column(Integer, ForeignKey("task_list_templates.id"), nullable=False, index=True)
+    parent_template_task_id = Column(Integer, ForeignKey("template_tasks.id"), nullable=True, index=True)
+    text = Column(String, nullable=False)
+
+    template = relationship("TaskListTemplate", back_populates="tasks")
+    parent = relationship("TemplateTask", remote_side=[id], back_populates="children")
+    children = relationship(
+        "TemplateTask", back_populates="parent", cascade="all, delete-orphan",
+        order_by="TemplateTask.id",
+    )
+
+    @property
+    def is_master(self) -> bool:
+        return bool(self.children)
+
+
 class AuditLog(Base):
     """Append-only. Every check/uncheck event, regardless of who (kids are anonymous)."""
     __tablename__ = "audit_log"

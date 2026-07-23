@@ -16,14 +16,14 @@ task-tracker/
     app/
       main.py            # FastAPI app, router registration, startup DB init
       database.py         # SQLite engine/session
-      models.py            # SQLAlchemy models: User, TaskList, Task, AuditLog
+      models.py            # SQLAlchemy models: User, TaskList, Task, AuditLog, TaskListTemplate, TemplateTask
       schemas.py           # Pydantic request/response models
       auth.py               # PIN hashing, JWT session cookie, lockout logic
       crud.py                # Rollover / public-visibility logic, list_key generation
       routers/
         auth_router.py       # /api/auth/* -- login, logout, me
         public.py             # /api/public/* -- anonymous kiosk endpoints
-        manager.py            # /api/manager/* -- list/task CRUD, per-list audit
+        manager.py            # /api/manager/* -- list/task CRUD, templates, per-list audit
         admin.py               # /api/admin/* -- user management, full audit trail
     seed_users.py           # one-time script to create the admin + manager accounts
     requirements.txt
@@ -72,8 +72,10 @@ docker compose up --build -d
 
 The backend also runs a tiny built-in migration on startup (see
 `_run_lightweight_migrations` in `backend/app/main.py`) that adds any new
-columns to the existing SQLite file automatically -- no manual DB steps
-needed, your existing lists/accounts are preserved.
+columns to existing tables automatically. Brand-new tables (like the
+templates feature added) don't need that step at all -- `create_all()` makes
+those on its own. Either way, no manual DB steps needed; your existing
+lists/accounts are preserved.
 
 ## Running it on Unraid (Docker Compose Manager plugin)
 
@@ -122,6 +124,12 @@ backend and Caddy.
   derived from its subtasks and recomputed automatically any time a subtask is
   checked, unchecked, added, or removed (`crud.recompute_master_state`).
   Checking the last subtask logs an audit entry for the master too.
+- **Templates:** "Save as template" on any list snapshots its current
+  structure (task/subtask names only, no checked state or date) into a new
+  `TaskListTemplate`. "Create list from template" in the Templates section
+  instantiates a brand-new, all-unchecked `TaskList` from that snapshot for
+  whatever name/date you give it. Templates and the lists made from them
+  aren't linked after creation -- deleting one doesn't touch the other.
 
 ## Extending later
 - The DB schema uses `Base.metadata.create_all()` plus a tiny hand-rolled
@@ -135,3 +143,7 @@ backend and Caddy.
   single level of nesting by design (masters can't themselves be subtasks) --
   extending to deeper trees would mean recursing there and in the frontend's
   rendering code (`public.js`/`dashboard.js`).
+- `backend/app/crud.py::copy_list_to_template` / `copy_template_to_list` are
+  the tree-copy functions behind Save-as-template / Create-list-from-template,
+  if that behavior ever needs to change (e.g. templates gaining their own
+  editing UI instead of only being created by snapshotting a list).

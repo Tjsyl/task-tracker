@@ -7,7 +7,7 @@ from typing import Optional, List
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .models import TaskList, Task, AuditLog
+from .models import TaskList, Task, AuditLog, TaskListTemplate, TemplateTask
 
 
 def make_list_key(name: str, on_date: date_, now) -> str:
@@ -115,3 +115,40 @@ def is_visible_on_public_dropdown(db: Session, task_list: TaskList, today: Optio
     if completed_on is None:
         return True  # not fully checked (or empty) -- always visible
     return today <= completed_on + timedelta(days=1)
+
+
+# ---------- Templates ----------
+
+def serialize_template_task(tt: TemplateTask, _include_subtasks: bool = True):
+    from .schemas import TemplateTaskOut  # local import, avoids a schemas<->crud cycle
+
+    subtasks: List["TemplateTaskOut"] = []
+    if _include_subtasks:
+        subtasks = [serialize_template_task(c, _include_subtasks=False) for c in tt.children]
+    return TemplateTaskOut(id=tt.id, text=tt.text, subtasks=subtasks)
+
+
+def copy_list_to_template(db: Session, task_list: TaskList, template: TaskListTemplate) -> None:
+    """Copies a TaskList's current top-level tasks + subtasks (structure only,
+    ignoring checked state) into `template`, which should already be added +
+    flushed (so template.id exists). Does not commit."""
+    top_level = [t for t in task_list.tasks if t.parent_task_id is None]
+    for task in top_level:
+        tt = TemplateTask(template_id=template.id, text=task.text)
+        db.add(tt)
+        db.flush()  # need tt.id before adding its subtasks
+        for sub in task.children:
+            db.add(TemplateTask(template_id=template.id, text=sub.text, parent_template_task_id=tt.id))
+
+
+def copy_template_to_list(db: Session, template: TaskListTemplate, task_list: TaskList) -> None:
+    """Copies a template's structure into `task_list` (which should already be
+    added + flushed so task_list.id exists) as fresh, all-unchecked tasks.
+    Does not commit."""
+    top_level = [tt for tt in template.tasks if tt.parent_template_task_id is None]
+    for tt in top_level:
+        task = Task(list_id=task_list.id, text=tt.text)
+        db.add(task)
+        db.flush()  # need task.id before adding its subtasks
+        for sub in tt.children:
+            db.add(Task(list_id=task_list.id, text=sub.text, parent_task_id=task.id))

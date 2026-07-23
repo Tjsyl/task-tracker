@@ -105,6 +105,39 @@ class AuditEntry(BaseModel):
     is_master: bool = False
 
 
+# ---------- Templates ----------
+
+class TemplateTaskOut(BaseModel):
+    """Mirrors PublicTask's nesting but has no checked/is_master concept --
+    templates are pure shape, no progress."""
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    text: str
+    subtasks: List["TemplateTaskOut"] = Field(default_factory=list)
+
+
+TemplateTaskOut.model_rebuild()
+
+
+class TemplateDetail(BaseModel):
+    id: int
+    name: str
+    created_at: datetime
+    created_by: str
+    tasks: List[TemplateTaskOut]  # top-level only, subtasks nested inside
+
+
+class SaveAsTemplateRequest(BaseModel):
+    """Saves an existing list's current structure as a new reusable template."""
+    name: str = Field(min_length=1, max_length=100)
+
+
+class CreateListFromTemplateRequest(BaseModel):
+    """Instantiates a new dated TaskList from a saved template."""
+    name: str = Field(min_length=1, max_length=100)
+    date: date
+
+
 # ---------- Admin: user management ----------
 
 class CreateUserRequest(BaseModel):

@@ -7,11 +7,15 @@ from sqlalchemy.orm import Session
 
 from .. import auth
 from ..database import get_db
-from ..models import TaskList, Task, AuditLog, User
-from ..crud import make_list_key, serialize_task, set_task_checked, recompute_master_state
+from ..models import TaskList, Task, AuditLog, User, TaskListTemplate
+from ..crud import (
+    make_list_key, serialize_task, set_task_checked, recompute_master_state,
+    serialize_template_task, copy_list_to_template, copy_template_to_list,
+)
 from ..schemas import (
     TaskListDetail, CreateTaskListRequest, CreateTaskRequest, CreateSubtaskRequest,
     UpdateTaskRequest, PublicTask, AuditEntry,
+    TemplateDetail, SaveAsTemplateRequest, CreateListFromTemplateRequest,
 )
 
 router = APIRouter(prefix="/api/manager", tags=["manager"])
@@ -191,3 +195,86 @@ def list_audit_trail(list_id: int, db: Session = Depends(get_db), user: User = D
         )
         for e in entries
     ]
+
+
+# ---------- Templates ----------
+# A template is just a saved structure (names + subtasks, no dates or checked
+# state) that can be turned into a fresh dated TaskList repeatedly -- e.g. a
+# recurring "Kid1 morning routine".
+
+def _to_template_detail(t: TaskListTemplate) -> TemplateDetail:
+    return TemplateDetail(
+        id=t.id,
+        name=t.name,
+        created_at=t.created_at,
+        created_by=t.creator.username,
+        tasks=[serialize_template_task(tt) for tt in t.tasks if tt.parent_template_task_id is None],
+    )
+
+
+@router.get("/templates", response_model=List[TemplateDetail])
+def all_templates(db: Session = Depends(get_db), user: User = Depends(auth.require_manager_or_admin)):
+    templates = db.query(TaskListTemplate).order_by(TaskListTemplate.name).all()
+    return [_to_template_detail(t) for t in templates]
+
+
+@router.post("/lists/{list_id}/save-as-template", response_model=TemplateDetail)
+def save_list_as_template(
+    list_id: int,
+    payload: SaveAsTemplateRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(auth.require_manager_or_admin),
+):
+    """Saves the *current* structure of an existing list (task/subtask names,
+    not their checked state or the list's date) as a new reusable template."""
+    tl = db.query(TaskList).filter(TaskList.id == list_id).first()
+    if not tl:
+        raise HTTPException(status_code=404, detail="List not found")
+
+    template = TaskListTemplate(name=payload.name, created_by_id=user.id)
+    db.add(template)
+    db.flush()  # get template.id before copying tasks into it
+    copy_list_to_template(db, tl, template)
+    db.commit()
+    db.refresh(template)
+    return _to_template_detail(template)
+
+
+@router.delete("/templates/{template_id}")
+def delete_template(
+    template_id: int, db: Session = Depends(get_db), user: User = Depends(auth.require_manager_or_admin)
+):
+    template = db.query(TaskListTemplate).filter(TaskListTemplate.id == template_id).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    db.delete(template)
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/templates/{template_id}/create-list", response_model=TaskListDetail)
+def create_list_from_template(
+    template_id: int,
+    payload: CreateListFromTemplateRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(auth.require_manager_or_admin),
+):
+    """Instantiates a brand-new, all-unchecked TaskList for `payload.date` from
+    a saved template's structure."""
+    template = db.query(TaskListTemplate).filter(TaskListTemplate.id == template_id).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    now = datetime.utcnow()
+    tl = TaskList(
+        name=payload.name,
+        list_key=make_list_key(payload.name, payload.date, now),
+        date=payload.date,
+        created_by_id=user.id,
+    )
+    db.add(tl)
+    db.flush()  # get tl.id before copying tasks into it
+    copy_template_to_list(db, template, tl)
+    db.commit()
+    db.refresh(tl)
+    return _to_detail(tl)

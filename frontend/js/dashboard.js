@@ -8,6 +8,7 @@ const whoamiEl = document.getElementById("whoami");
 const adminSection = document.getElementById("admin-section");
 const globalAuditSection = document.getElementById("global-audit-section");
 const listsContainer = document.getElementById("lists-container");
+const templatesContainer = document.getElementById("templates-container");
 const usersContainer = document.getElementById("users-container");
 const globalAuditContainer = document.getElementById("global-audit-container");
 const taskBuilder = document.getElementById("task-builder");
@@ -32,6 +33,7 @@ async function init() {
   }
 
   loadLists();
+  loadTemplates();
 }
 
 document.getElementById("logout-btn").addEventListener("click", async () => {
@@ -152,12 +154,24 @@ function renderListCard(list) {
   actions.style.margin = "0.5rem 0";
 
   const auditBtn = mkButton("View audit trail", () => toggleAudit(list.id, wrap));
+  const saveTemplateBtn = mkButton("Save as template", async () => {
+    const name = prompt("Template name:", list.name);
+    if (!name || !name.trim()) return;
+    try {
+      await api.post(`/manager/lists/${list.id}/save-as-template`, { name: name.trim() });
+      loadTemplates();
+      alert(`Saved "${name.trim()}" as a template.`);
+    } catch (err) {
+      alert("Couldn't save template: " + err.message);
+    }
+  });
   const deleteBtn = mkButton("Delete list", async () => {
     if (!confirm(`Delete list "${list.name}"? This cannot be undone.`)) return;
     await api.delete(`/manager/lists/${list.id}`);
     loadLists();
   }, true);
   actions.appendChild(auditBtn);
+  actions.appendChild(saveTemplateBtn);
   actions.appendChild(deleteBtn);
   wrap.appendChild(actions);
 
@@ -280,6 +294,72 @@ function renderAuditTable(entries) {
     )
     .join("");
   return `<table><thead><tr><th>Task</th><th>Action</th><th>When</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+// ---------- Templates ----------
+
+async function loadTemplates() {
+  const templates = await api.get("/manager/templates");
+  templatesContainer.innerHTML = "";
+  if (templates.length === 0) {
+    templatesContainer.innerHTML = `<p class="empty-state">No templates saved yet. Use "Save as template" on any task list above.</p>`;
+    return;
+  }
+  for (const template of templates) {
+    templatesContainer.appendChild(renderTemplateCard(template));
+  }
+}
+
+function renderTemplateCard(template) {
+  const wrap = document.createElement("div");
+  wrap.className = "task-card";
+  wrap.style.marginBottom = "1rem";
+
+  const taskSummary = template.tasks
+    .map((t) => (t.subtasks.length ? `${t.text} (${t.subtasks.length} subtask${t.subtasks.length === 1 ? "" : "s"})` : t.text))
+    .join(", ") || "(no tasks)";
+
+  const header = document.createElement("div");
+  header.innerHTML = `<strong>${escapeHtml(template.name)}</strong>
+    <span style="color:var(--muted); font-size:0.85rem;"> &mdash; ${escapeHtml(taskSummary)}</span>`;
+  wrap.appendChild(header);
+
+  const actions = document.createElement("div");
+  actions.className = "row-actions";
+  actions.style.margin = "0.5rem 0";
+
+  const deleteBtn = mkButton("Delete template", async () => {
+    if (!confirm(`Delete template "${template.name}"? This doesn't affect any lists already created from it.`)) return;
+    await api.delete(`/manager/templates/${template.id}`);
+    loadTemplates();
+  }, true);
+  actions.appendChild(deleteBtn);
+  wrap.appendChild(actions);
+
+  const createForm = document.createElement("form");
+  createForm.className = "inline-form";
+  createForm.innerHTML = `
+    <input type="text" placeholder="List name" value="${escapeHtml(template.name)}" required>
+    <input type="date" required>
+    <button type="submit" class="primary">Create list from template</button>
+  `;
+  createForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const [nameInput, dateInput] = createForm.querySelectorAll("input");
+    try {
+      await api.post(`/manager/templates/${template.id}/create-list`, {
+        name: nameInput.value.trim(),
+        date: dateInput.value,
+      });
+      loadLists();
+      alert(`Created list "${nameInput.value.trim()}".`);
+    } catch (err) {
+      alert("Couldn't create list from template: " + err.message);
+    }
+  });
+  wrap.appendChild(createForm);
+
+  return wrap;
 }
 
 // ---------- Admin: users ----------
