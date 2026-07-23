@@ -1,4 +1,8 @@
-/* Manager/Admin dashboard. Admin-only sections are shown/hidden based on /auth/me role. */
+/* Manager/Admin dashboard. Admin-only sections are shown/hidden based on /auth/me role.
+
+Tasks can have subtasks (single level only). A task with subtasks is a
+"master": no checkbox of its own -- its checked state is derived server-side
+from its subtasks, and greys out once every subtask is checked. */
 
 const whoamiEl = document.getElementById("whoami");
 const adminSection = document.getElementById("admin-section");
@@ -6,6 +10,7 @@ const globalAuditSection = document.getElementById("global-audit-section");
 const listsContainer = document.getElementById("lists-container");
 const usersContainer = document.getElementById("users-container");
 const globalAuditContainer = document.getElementById("global-audit-container");
+const taskBuilder = document.getElementById("task-builder");
 
 let currentRole = null;
 
@@ -34,23 +39,91 @@ document.getElementById("logout-btn").addEventListener("click", async () => {
   window.location.href = "login.html";
 });
 
-// ---------- Task lists ----------
+// ---------- Create-list task builder ----------
+
+function addTaskBuilderRow() {
+  const item = document.createElement("div");
+  item.className = "task-builder-item";
+
+  const itemRow = document.createElement("div");
+  itemRow.className = "item-row";
+
+  const textInput = document.createElement("input");
+  textInput.type = "text";
+  textInput.placeholder = "Task text (e.g. Morning routine)";
+
+  const addSubBtn = document.createElement("button");
+  addSubBtn.type = "button";
+  addSubBtn.className = "small";
+  addSubBtn.textContent = "+ Subtask";
+
+  const removeBtn = document.createElement("button");
+  removeBtn.type = "button";
+  removeBtn.className = "small danger";
+  removeBtn.textContent = "Remove";
+  removeBtn.addEventListener("click", () => item.remove());
+
+  itemRow.append(textInput, addSubBtn, removeBtn);
+
+  const subtasksEl = document.createElement("div");
+  subtasksEl.className = "task-builder-subtasks";
+
+  addSubBtn.addEventListener("click", () => addSubtaskBuilderRow(subtasksEl));
+
+  item.append(itemRow, subtasksEl);
+  taskBuilder.appendChild(item);
+}
+
+function addSubtaskBuilderRow(subtasksEl) {
+  const row = document.createElement("div");
+  row.className = "item-row";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.placeholder = "Subtask text";
+
+  const removeBtn = document.createElement("button");
+  removeBtn.type = "button";
+  removeBtn.className = "small danger";
+  removeBtn.textContent = "Remove";
+  removeBtn.addEventListener("click", () => row.remove());
+
+  row.append(input, removeBtn);
+  subtasksEl.appendChild(row);
+}
+
+document.getElementById("add-task-row-btn").addEventListener("click", addTaskBuilderRow);
+
+function collectTaskBuilderPayload() {
+  const tasks = [];
+  for (const item of taskBuilder.querySelectorAll(".task-builder-item")) {
+    const text = item.querySelector(".item-row input[type=text]").value.trim();
+    if (!text) continue;
+    const subtasks = [...item.querySelectorAll(".task-builder-subtasks input[type=text]")]
+      .map((i) => i.value.trim())
+      .filter(Boolean);
+    tasks.push({ text, subtasks });
+  }
+  return tasks;
+}
 
 document.getElementById("create-list-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const name = document.getElementById("new-list-name").value.trim();
   const date = document.getElementById("new-list-date").value;
-  const tasksRaw = document.getElementById("new-list-tasks").value.trim();
-  const task_texts = tasksRaw ? tasksRaw.split(",").map((s) => s.trim()).filter(Boolean) : [];
+  const tasks = collectTaskBuilderPayload();
 
   try {
-    await api.post("/manager/lists", { name, date, task_texts });
+    await api.post("/manager/lists", { name, date, tasks });
     e.target.reset();
+    taskBuilder.innerHTML = "";
     loadLists();
   } catch (err) {
     alert("Couldn't create list: " + err.message);
   }
 });
+
+// ---------- Task lists ----------
 
 async function loadLists() {
   const lists = await api.get("/manager/lists");
@@ -89,7 +162,7 @@ function renderListCard(list) {
   wrap.appendChild(actions);
 
   for (const task of list.tasks) {
-    wrap.appendChild(renderTaskRow(task));
+    appendTaskBlock(wrap, task);
   }
 
   const addForm = document.createElement("form");
@@ -112,22 +185,36 @@ function renderListCard(list) {
   return wrap;
 }
 
-function renderTaskRow(task) {
+/* Appends one task row to `container` -- and, if it's a master, its subtask
+   rows right after it (indented, one level only). */
+function appendTaskBlock(container, task, { isSubtask = false } = {}) {
   const row = document.createElement("div");
-  row.className = "task-row" + (task.checked ? " checked" : "");
+  row.className = "task-row" + (task.checked ? " checked" : "") + (isSubtask ? " subtask-row" : "");
 
-  const checkbox = document.createElement("input");
-  checkbox.type = "checkbox";
-  checkbox.checked = task.checked;
-  checkbox.addEventListener("change", async () => {
-    await api.patch(`/manager/tasks/${task.id}`, { checked: checkbox.checked });
-    row.classList.toggle("checked", checkbox.checked);
-  });
+  if (!task.is_master) {
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = task.checked;
+    checkbox.addEventListener("change", async () => {
+      try {
+        await api.patch(`/manager/tasks/${task.id}`, { checked: checkbox.checked });
+        loadLists(); // reload so a parent master row (if any) picks up its derived state
+      } catch (err) {
+        alert("Couldn't save: " + err.message);
+        checkbox.checked = !checkbox.checked;
+      }
+    });
+    row.appendChild(checkbox);
+  }
 
   const label = document.createElement("span");
-  label.className = "task-text";
+  label.className = "task-text" + (task.is_master ? " master-text" : "");
   label.textContent = task.text;
   label.style.flex = "1";
+  row.appendChild(label);
+
+  const rowActions = document.createElement("div");
+  rowActions.className = "row-actions";
 
   const editBtn = mkButton("Edit", async () => {
     const newText = prompt("Edit task text:", task.text);
@@ -135,21 +222,43 @@ function renderTaskRow(task) {
     await api.patch(`/manager/tasks/${task.id}`, { text: newText.trim() });
     loadLists();
   });
-  const deleteBtn = mkButton("Remove", async () => {
-    if (!confirm("Remove this task?")) return;
-    await api.delete(`/manager/tasks/${task.id}`);
-    loadLists();
-  }, true);
+  rowActions.appendChild(editBtn);
 
-  const actions = document.createElement("div");
-  actions.className = "row-actions";
-  actions.appendChild(editBtn);
-  actions.appendChild(deleteBtn);
+  if (!isSubtask) {
+    const addSubBtn = mkButton("+ Subtask", async () => {
+      const text = prompt("Subtask text:");
+      if (!text || !text.trim()) return;
+      try {
+        await api.post(`/manager/tasks/${task.id}/subtasks`, { text: text.trim() });
+        loadLists();
+      } catch (err) {
+        alert("Couldn't add subtask: " + err.message);
+      }
+    });
+    addSubBtn.classList.add("small");
+    rowActions.appendChild(addSubBtn);
+  }
 
-  row.appendChild(checkbox);
-  row.appendChild(label);
-  row.appendChild(actions);
-  return row;
+  const deleteBtn = mkButton(
+    "Remove",
+    async () => {
+      const msg = task.is_master ? "Remove this task and all its subtasks?" : "Remove this task?";
+      if (!confirm(msg)) return;
+      await api.delete(`/manager/tasks/${task.id}`);
+      loadLists();
+    },
+    true
+  );
+  rowActions.appendChild(deleteBtn);
+
+  row.appendChild(rowActions);
+  container.appendChild(row);
+
+  if (task.is_master) {
+    for (const sub of task.subtasks) {
+      appendTaskBlock(container, sub, { isSubtask: true });
+    }
+  }
 }
 
 async function toggleAudit(listId, cardEl) {
@@ -167,7 +276,7 @@ function renderAuditTable(entries) {
   if (entries.length === 0) return `<p class="empty-state">No audit entries yet.</p>`;
   const rows = entries
     .map(
-      (e) => `<tr><td>${escapeHtml(e.task_text)}</td><td>${e.action}</td><td>${new Date(e.timestamp + "Z").toLocaleString()}</td></tr>`
+      (e) => `<tr><td>${escapeHtml(e.task_text)}${e.is_master ? ' <span class="tag">master</span>' : ""}</td><td>${e.action}</td><td>${new Date(e.timestamp + "Z").toLocaleString()}</td></tr>`
     )
     .join("");
   return `<table><thead><tr><th>Task</th><th>Action</th><th>When</th></tr></thead><tbody>${rows}</tbody></table>`;
@@ -243,7 +352,7 @@ async function loadGlobalAudit() {
   const rows = entries
     .slice(0, 200)
     .map(
-      (e) => `<tr><td>${escapeHtml(e.list_name)}</td><td>${escapeHtml(e.task_text)}</td><td>${e.action}</td><td>${new Date(e.timestamp + "Z").toLocaleString()}</td></tr>`
+      (e) => `<tr><td>${escapeHtml(e.list_name)}</td><td>${escapeHtml(e.task_text)}${e.is_master ? ' <span class="tag">master</span>' : ""}</td><td>${e.action}</td><td>${new Date(e.timestamp + "Z").toLocaleString()}</td></tr>`
     )
     .join("");
   globalAuditContainer.innerHTML = `<table><thead><tr><th>List</th><th>Task</th><th>Action</th><th>When</th></tr></thead><tbody>${rows}</tbody></table>`;

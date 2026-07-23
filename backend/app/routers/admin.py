@@ -83,6 +83,7 @@ def full_audit_trail(db: Session = Depends(get_db), user: User = Depends(auth.re
                 list_name=list_name,
                 action=e.action,
                 timestamp=e.timestamp,
+                is_master=task.is_master if task else False,
             )
         )
     return out

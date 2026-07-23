@@ -8,10 +8,10 @@ from sqlalchemy.orm import Session
 from .. import auth
 from ..database import get_db
 from ..models import TaskList, Task, AuditLog, User
-from ..crud import make_list_key
+from ..crud import make_list_key, serialize_task, set_task_checked, recompute_master_state
 from ..schemas import (
-    TaskListDetail, CreateTaskListRequest, CreateTaskRequest, UpdateTaskRequest,
-    PublicTask, AuditEntry,
+    TaskListDetail, CreateTaskListRequest, CreateTaskRequest, CreateSubtaskRequest,
+    UpdateTaskRequest, PublicTask, AuditEntry,
 )
 
 router = APIRouter(prefix="/api/manager", tags=["manager"])
@@ -25,7 +25,7 @@ def _to_detail(tl: TaskList) -> TaskListDetail:
         date=tl.date,
         created_at=tl.created_at,
         created_by=tl.creator.username,
-        tasks=[PublicTask(id=t.id, text=t.text, checked=t.checked) for t in tl.tasks],
+        tasks=[serialize_task(t) for t in tl.tasks if t.parent_task_id is None],
     )
 
 
@@ -51,8 +51,14 @@ def create_list(
     )
     db.add(tl)
     db.flush()  # get tl.id before adding tasks
-    for text in payload.task_texts:
-        db.add(Task(list_id=tl.id, text=text))
+
+    for item in payload.tasks:
+        parent_task = Task(list_id=tl.id, text=item.text)
+        db.add(parent_task)
+        db.flush()  # get parent_task.id before adding its subtasks
+        for sub_text in item.subtasks:
+            db.add(Task(list_id=tl.id, text=sub_text, parent_task_id=parent_task.id))
+
     db.commit()
     db.refresh(tl)
     return _to_detail(tl)
@@ -75,6 +81,8 @@ def add_task(
     db: Session = Depends(get_db),
     user: User = Depends(auth.require_manager_or_admin),
 ):
+    """Adds a new top-level task (no parent). Use the /subtasks endpoint below
+    to add a subtask under an existing task instead."""
     tl = db.query(TaskList).filter(TaskList.id == list_id).first()
     if not tl:
         raise HTTPException(status_code=404, detail="List not found")
@@ -82,7 +90,34 @@ def add_task(
     db.add(task)
     db.commit()
     db.refresh(task)
-    return PublicTask(id=task.id, text=task.text, checked=task.checked)
+    return serialize_task(task)
+
+
+@router.post("/tasks/{task_id}/subtasks", response_model=PublicTask)
+def add_subtask(
+    task_id: int,
+    payload: CreateSubtaskRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(auth.require_manager_or_admin),
+):
+    """Adds a subtask under an existing top-level task, turning that task into
+    a master (single level of nesting only -- a subtask can't itself have
+    subtasks)."""
+    parent = db.query(Task).filter(Task.id == task_id).first()
+    if not parent:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if parent.parent_task_id is not None:
+        raise HTTPException(status_code=400, detail="Can't add a subtask to a subtask (one level of nesting only).")
+
+    subtask = Task(list_id=parent.list_id, text=payload.text, parent_task_id=parent.id)
+    db.add(subtask)
+    db.flush()
+    # A newly added (unchecked) subtask means the master can no longer be "done"
+    # if it previously was -- keep its derived state honest.
+    recompute_master_state(db, parent)
+    db.commit()
+    db.refresh(parent)
+    return serialize_task(parent)
 
 
 @router.patch("/tasks/{task_id}", response_model=PublicTask)
@@ -98,21 +133,35 @@ def update_task(
 
     if payload.text is not None:
         task.text = payload.text
-    if payload.checked is not None and payload.checked != task.checked:
-        task.checked = payload.checked
-        db.add(AuditLog(task_id=task.id, action="checked" if task.checked else "unchecked"))
+
+    if payload.checked is not None:
+        try:
+            set_task_checked(db, task, payload.checked)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
     db.commit()
     db.refresh(task)
-    return PublicTask(id=task.id, text=task.text, checked=task.checked)
+    return serialize_task(task)
 
 
 @router.delete("/tasks/{task_id}")
 def delete_task(task_id: int, db: Session = Depends(get_db), user: User = Depends(auth.require_manager_or_admin)):
+    """Deleting a master task deletes its subtasks too (cascade). Deleting a
+    subtask can flip its master to "done" if that was the last one left unchecked."""
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    parent_id = task.parent_task_id
     db.delete(task)
+    db.flush()
+
+    if parent_id:
+        parent = db.query(Task).filter(Task.id == parent_id).first()
+        if parent:
+            recompute_master_state(db, parent)
+
     db.commit()
     return {"ok": True}
 
@@ -129,15 +178,16 @@ def list_audit_trail(list_id: int, db: Session = Depends(get_db), user: User = D
         .order_by(AuditLog.timestamp.desc())
         .all()
     )
-    task_text_by_id = {t.id: t.text for t in tl.tasks}
+    task_by_id = {t.id: t for t in tl.tasks}
     return [
         AuditEntry(
             id=e.id,
             task_id=e.task_id,
-            task_text=task_text_by_id.get(e.task_id, "(deleted task)"),
+            task_text=task_by_id[e.task_id].text if e.task_id in task_by_id else "(deleted task)",
             list_name=tl.name,
             action=e.action,
             timestamp=e.timestamp,
+            is_master=task_by_id[e.task_id].is_master if e.task_id in task_by_id else False,
         )
         for e in entries
     ]

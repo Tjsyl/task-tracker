@@ -125,6 +125,24 @@ button.primary:hover { background: var(--accent-dark); }
   text-decoration: line-through;
 }
 
+/* Master tasks (have subtasks): no checkbox, bold, greys out on its own once
+   every subtask is checked -- never clicked directly. */
+.master-text {
+  font-weight: 700;
+  cursor: default;
+}
+
+.task-row:has(.master-text) {
+  padding-left: 0.3rem;
+}
+
+.subtask-row {
+  padding-left: 2.4rem;
+  font-size: 1.05rem;
+}
+
+.subtask-row .task-text { cursor: pointer; }
+
 .footer-note {
   text-align: center;
   color: var(--muted);
@@ -179,3 +197,50 @@ th { color: var(--muted); font-weight: 600; }
 .tag { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 999px; background: var(--border); font-size: 0.8rem; }
 .tag.admin { background: #e7d9c9; }
 .tag.manager { background: #d9e7df; }
+
+/* Task-builder (list creation form) */
+.task-builder-item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.7rem;
+  margin-bottom: 0.6rem;
+  background: var(--bg);
+}
+
+.task-builder-item .item-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.task-builder-item .item-row input[type="text"] {
+  flex: 1;
+}
+
+.task-builder-subtasks {
+  margin: 0.6rem 0 0 1.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+button.small {
+  font-size: 0.85rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  cursor: pointer;
+}
+
+button.small.danger { color: var(--danger); border-color: var(--danger); }
+
+#add-task-row-btn {
+  font-size: 0.95rem;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  border: 1px dashed var(--accent);
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+}

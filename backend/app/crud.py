@@ -1,6 +1,8 @@
-"""Shared query helpers, notably the on-the-fly public-visibility / rollover logic."""
+"""Shared query helpers: rollover/public-visibility logic, and the master/subtask
+checked-state cascade (a master task's checked value is always derived from its
+children, never set directly)."""
 from datetime import date as date_, timedelta
-from typing import Optional
+from typing import Optional, List
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -14,19 +16,83 @@ def make_list_key(name: str, on_date: date_, now) -> str:
     return f"{safe_name}-{on_date.isoformat()}-{now.strftime('%H%M%S')}"
 
 
+# ---------- Master / subtask cascade ----------
+
+def recompute_master_state(db: Session, parent: Task) -> bool:
+    """Recompute a master task's derived checked state from its children,
+    persist it, and log an audit entry if it changed (so the audit trail
+    reflects when the master itself became "done"). Returns the new state.
+    No-op (returns current value) if `parent` has no children."""
+    if not parent.children:
+        return parent.checked
+    new_state = all(c.checked for c in parent.children)
+    if new_state != parent.checked:
+        parent.checked = new_state
+        db.add(AuditLog(task_id=parent.id, action="checked" if new_state else "unchecked"))
+    return new_state
+
+
+def set_task_checked(db: Session, task: Task, checked: bool) -> Optional[Task]:
+    """Set a leaf task's checked state (only writes + audits if it actually
+    changed), then cascades to its parent master if it has one. Returns the
+    parent (with freshly recomputed state) if applicable, else None.
+
+    Does not commit -- that's the caller's job. Raises ValueError if `task`
+    itself has children, since masters are derived-only and can't be
+    directly checked/unchecked (callers should turn this into a 4xx).
+    """
+    if task.children:
+        raise ValueError("Cannot directly check/uncheck a task that has subtasks.")
+
+    if checked != task.checked:
+        task.checked = checked
+        db.add(AuditLog(task_id=task.id, action="checked" if checked else "unchecked"))
+        # Flush before re-querying the parent's children below -- with autoflush
+        # off (see database.py), a fresh query wouldn't otherwise see this change.
+        db.flush()
+
+    parent = None
+    if task.parent_task_id:
+        parent = db.query(Task).filter(Task.id == task.parent_task_id).first()
+        if parent:
+            recompute_master_state(db, parent)
+    return parent
+
+
+def serialize_task(task: Task, _include_subtasks: bool = True):
+    """Task -> PublicTask, nesting one level of subtasks (this app only
+    supports a single level: a master task with plain subtasks)."""
+    from .schemas import PublicTask  # local import: schemas doesn't import crud, avoids a cycle
+
+    subtasks: List["PublicTask"] = []
+    if _include_subtasks:
+        subtasks = [serialize_task(c, _include_subtasks=False) for c in task.children]
+    return PublicTask(
+        id=task.id,
+        text=task.text,
+        checked=task.checked,
+        is_master=task.is_master,
+        subtasks=subtasks,
+    )
+
+
+# ---------- Rollover / public visibility ----------
+
 def list_completion_date(db: Session, task_list: TaskList) -> Optional[date_]:
     """The date the list *became* fully checked, or None if not currently fully checked.
 
     Derived from the audit log rather than stored explicitly: it's the timestamp of the
-    most recent 'checked' action among the list's tasks, but only meaningful while every
-    task in the list is currently checked (if anything gets unchecked later, the list is
-    no longer "complete" and this returns None again).
+    most recent 'checked' action among the list's tasks (this includes master tasks'
+    own synthetic audit entries, which is fine -- they land at essentially the same
+    moment as their last subtask's check), but only meaningful while every top-level
+    task in the list is currently checked (if anything gets unchecked later, the list
+    is no longer "complete" and this returns None again).
     """
-    tasks = task_list.tasks
-    if not tasks or not all(t.checked for t in tasks):
+    top_level = [t for t in task_list.tasks if t.parent_task_id is None]
+    if not top_level or not all(t.checked for t in top_level):
         return None
 
-    task_ids = [t.id for t in tasks]
+    task_ids = [t.id for t in task_list.tasks]
     latest = (
         db.query(func.max(AuditLog.timestamp))
         .filter(AuditLog.task_id.in_(task_ids), AuditLog.action == "checked")

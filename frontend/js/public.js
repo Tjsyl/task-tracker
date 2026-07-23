@@ -1,4 +1,9 @@
-/* Public kiosk view: date dropdown -> tabs -> checkbox list. No auth. */
+/* Public kiosk view: date dropdown -> tabs -> checkbox list. No auth.
+
+A task with subtasks is a "master": it has no checkbox of its own. Its
+greyed-out/struck-through state is derived server-side from whether all of
+its subtasks are checked, and toggling a subtask may flip the master --
+the server tells us via the `parent` field on the toggle response. */
 
 const dateSelect = document.getElementById("date-select");
 const tabsEl = document.getElementById("tabs");
@@ -75,40 +80,79 @@ function renderTasks() {
     card.innerHTML = `<p class="empty-state">No tasks on this list yet.</p>`;
   } else {
     for (const task of list.tasks) {
-      const row = document.createElement("div");
-      row.className = "task-row" + (task.checked ? " checked" : "");
-
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.checked = task.checked;
-      checkbox.addEventListener("change", () => toggleTask(task.id, row));
-
-      const label = document.createElement("span");
-      label.className = "task-text";
-      label.textContent = task.text;
-      label.addEventListener("click", () => {
-        checkbox.checked = !checkbox.checked;
-        toggleTask(task.id, row);
-      });
-
-      row.appendChild(checkbox);
-      row.appendChild(label);
-      card.appendChild(row);
+      card.appendChild(renderTaskRow(task));
+      if (task.is_master) {
+        for (const sub of task.subtasks) {
+          card.appendChild(renderTaskRow(sub, { indented: true }));
+        }
+      }
     }
   }
   taskAreaEl.appendChild(card);
 }
 
-async function toggleTask(taskId, rowEl) {
+function renderTaskRow(task, { indented = false } = {}) {
+  const row = document.createElement("div");
+  row.className = "task-row" + (task.checked ? " checked" : "") + (indented ? " subtask-row" : "");
+  row.dataset.taskId = task.id;
+
+  if (task.is_master) {
+    // Master tasks are derived-only -- no checkbox, just the label.
+    const label = document.createElement("span");
+    label.className = "task-text master-text";
+    label.textContent = task.text;
+    row.appendChild(label);
+    return row;
+  }
+
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = task.checked;
+  checkbox.addEventListener("change", () => toggleTask(task.id));
+
+  const label = document.createElement("span");
+  label.className = "task-text";
+  label.textContent = task.text;
+  label.addEventListener("click", () => {
+    checkbox.checked = !checkbox.checked;
+    toggleTask(task.id);
+  });
+
+  row.appendChild(checkbox);
+  row.appendChild(label);
+  return row;
+}
+
+async function toggleTask(taskId) {
   try {
-    const updated = await api.post(`/public/tasks/${taskId}/toggle`);
-    rowEl.classList.toggle("checked", updated.checked);
-    // Keep in-memory state in sync so re-render (e.g. tab switch) stays correct.
-    const list = currentLists.find((l) => l.id === activeListId);
-    const task = list.tasks.find((t) => t.id === taskId);
-    if (task) task.checked = updated.checked;
+    const { task: updated, parent } = await api.post(`/public/tasks/${taskId}/toggle`);
+    applyTaskUpdate(updated);
+    if (parent) applyTaskUpdate(parent);
   } catch (err) {
     alert("Couldn't save that change: " + err.message);
+  }
+}
+
+/* Patches in-memory state + the matching DOM row for a task (leaf or master)
+   returned from the server, without re-fetching or re-rendering everything. */
+function applyTaskUpdate(updated) {
+  const list = currentLists.find((l) => l.id === activeListId);
+  if (!list) return;
+
+  for (const top of list.tasks) {
+    if (top.id === updated.id) {
+      top.checked = updated.checked;
+    } else {
+      const sub = top.subtasks.find((s) => s.id === updated.id);
+      if (sub) sub.checked = updated.checked;
+    }
+  }
+
+  const rowEl = taskAreaEl.querySelector(`[data-task-id="${updated.id}"]`);
+  if (rowEl) {
+    rowEl.classList.toggle("checked", updated.checked);
+    const checkbox = rowEl.querySelector("input[type=checkbox]");
+    if (checkbox) checkbox.checked = updated.checked;
   }
 }
 

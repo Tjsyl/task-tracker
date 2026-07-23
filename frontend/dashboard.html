@@ -23,11 +23,18 @@
 
     <div class="section">
       <h2>Create a task list</h2>
-      <form id="create-list-form" class="inline-form">
-        <input id="new-list-name" placeholder="List name (e.g. Kid1)" required>
-        <input id="new-list-date" type="date" required>
-        <input id="new-list-tasks" placeholder="Tasks, comma-separated (optional)">
-        <button type="submit" class="primary">Create</button>
+      <form id="create-list-form">
+        <div class="inline-form">
+          <input id="new-list-name" placeholder="List name (e.g. Kid1)" required>
+          <input id="new-list-date" type="date" required>
+        </div>
+
+        <div id="task-builder"></div>
+        <button type="button" id="add-task-row-btn">+ Add task</button>
+
+        <div style="margin-top:1rem;">
+          <button type="submit" class="primary">Create list</button>
+        </div>
       </form>
     </div>
 
