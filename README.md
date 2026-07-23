@@ -60,6 +60,21 @@ task-tracker/
    - Kids: use the default page directly, no login.
    - You / your wife: click **Login** (top-right) with username + 6-digit PIN.
 
+## Updating an existing deployment (backend code changed)
+
+Icon/frontend-only changes take effect on refresh (frontend is bind-mounted).
+Backend code changes -- like the master/subtask feature -- need an image
+rebuild and a container recreate:
+
+```
+docker compose up --build -d
+```
+
+The backend also runs a tiny built-in migration on startup (see
+`_run_lightweight_migrations` in `backend/app/main.py`) that adds any new
+columns to the existing SQLite file automatically -- no manual DB steps
+needed, your existing lists/accounts are preserved.
+
 ## Running it on Unraid (Docker Compose Manager plugin)
 
 No MariaDB or other DB container needed -- SQLite is embedded in the backend
@@ -101,10 +116,22 @@ backend and Caddy.
 - **Kids/audit:** no login or "who are you" prompt for the public view -- list
   names (e.g. "Kid1") identify whose tasks they are. Every check/uncheck is still
   timestamped in the append-only `audit_log` table.
+- **Master/subtask tasks:** a task can have subtasks (one level of nesting only).
+  A task with subtasks is a "master" -- no checkbox anywhere in the UI, and the
+  API rejects direct toggles on it (400 error). Its checked/greyed-out state is
+  derived from its subtasks and recomputed automatically any time a subtask is
+  checked, unchecked, added, or removed (`crud.recompute_master_state`).
+  Checking the last subtask logs an audit entry for the master too.
 
 ## Extending later
-- The DB schema uses `Base.metadata.create_all()` rather than a migration tool
-  (Alembic) since this is a single-file SQLite DB with only two real users --
-  fine for now, but worth adding Alembic if the schema grows.
+- The DB schema uses `Base.metadata.create_all()` plus a tiny hand-rolled
+  startup migration (`main.py::_run_lightweight_migrations`) rather than a full
+  migration tool (Alembic) -- fine at this scale, but worth switching to Alembic
+  if the schema keeps growing or if changes get more complex than "add a column."
 - `backend/app/crud.py::is_visible_on_public_dropdown` is the one function to
   touch if the rollover rule ever changes.
+- `backend/app/crud.py::recompute_master_state` is the one function to touch if
+  the master/subtask completion rule ever changes. This app only supports a
+  single level of nesting by design (masters can't themselves be subtasks) --
+  extending to deeper trees would mean recursing there and in the frontend's
+  rendering code (`public.js`/`dashboard.js`).
