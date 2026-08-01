@@ -104,7 +104,6 @@ backend and Caddy.
 6. Visit `http://<unraid-ip>:8080/` (or whatever port you set).
 
 ## Notes on key design decisions
-(See `task_tracker_spec.md` → **Resolved** section for full rationale.)
 
 - **PIN security:** PINs are bcrypt-hashed at rest. After 5 failed login attempts,
   the account locks for 15 minutes (see `MAX_FAILED_ATTEMPTS` / `LOCKOUT_MINUTES`
