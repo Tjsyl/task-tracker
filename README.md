@@ -1,7 +1,6 @@
 # Family Task Tracker
 
-A LAN-only, Docker-deployed household task tracker. Full spec/design decisions are
-in `../task_tracker_spec.md` (one level up, alongside this project folder).
+A LAN-only, Docker-deployed household task tracker. 
 
 ## Stack
 - **Backend:** FastAPI + SQLAlchemy + SQLite (`backend/`)
