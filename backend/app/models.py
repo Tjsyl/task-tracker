@@ -1,6 +1,6 @@
 """SQLAlchemy models for the Family Task Tracker.
 
-Roles: admin (Travis) and manager (wife) are the only two real accounts.
+Roles: admin and manager are the only two real accounts.
 Kids never log in -- the public/kiosk view is anonymous, per spec.
 """
 from datetime import datetime, date as date_

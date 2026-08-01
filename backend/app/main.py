@@ -14,7 +14,7 @@ def _run_lightweight_migrations():
     """Tiny hand-rolled migration, not a full Alembic setup (see README).
 
     create_all() only creates missing *tables*, it never alters an existing
-    table's columns. Travis's Unraid deployment already has a live tasks
+    table's columns. An existing deployment may already have a live tasks
     table from before the parent/subtask feature existed, so add the new
     column by hand if it's not there yet. Safe to run every startup -- it's
     a no-op once the column exists.

@@ -39,7 +39,7 @@ def main():
     db = SessionLocal()
     try:
         print("Setting up the two real accounts (admin + manager).\n")
-        admin_username = input("Admin username [travis]: ").strip() or "travis"
+        admin_username = input("Admin username [admin]: ").strip() or "admin"
         create_if_missing(db, admin_username, "admin")
 
         manager_username = input("Manager username: ").strip()
