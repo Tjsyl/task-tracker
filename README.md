@@ -1,6 +1,6 @@
 # Family Task Tracker
 
-A LAN-only, Docker-deployed household task tracker. 
+A LAN-only, Docker-deployed household task tracker. I do have it "public" using cloudflared and behind cloudflare auth.
 
 ## Stack
 - **Backend:** FastAPI + SQLAlchemy + SQLite (`backend/`)
