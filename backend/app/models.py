@@ -44,7 +44,10 @@ class TaskList(Base):
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
     creator = relationship("User", back_populates="task_lists")
-    tasks = relationship("Task", back_populates="task_list", cascade="all, delete-orphan")
+    tasks = relationship(
+        "Task", back_populates="task_list", cascade="all, delete-orphan",
+        order_by="Task.sort_order, Task.id",
+    )
 
 
 class Task(Base):
@@ -62,6 +65,11 @@ class Task(Base):
     text = Column(String, nullable=False)
     checked = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    # Manager-controlled display order (drag-to-reorder), scoped to siblings:
+    # among a list's top-level tasks, or among one master's subtasks. Not a
+    # global ordering -- ties break on id (creation order), see the
+    # order_by clauses on TaskList.tasks / Task.children below.
+    sort_order = Column(Integer, default=0, nullable=False)
 
     task_list = relationship("TaskList", back_populates="tasks")
     audit_entries = relationship("AuditLog", back_populates="task", cascade="all, delete-orphan")
@@ -69,7 +77,7 @@ class Task(Base):
     parent = relationship("Task", remote_side=[id], back_populates="children")
     children = relationship(
         "Task", back_populates="parent", cascade="all, delete-orphan",
-        order_by="Task.id",
+        order_by="Task.sort_order, Task.id",
     )
 
     @property

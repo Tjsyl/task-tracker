@@ -11,10 +11,11 @@ from ..models import TaskList, Task, AuditLog, User, TaskListTemplate
 from ..crud import (
     make_list_key, serialize_task, set_task_checked, recompute_master_state,
     serialize_template_task, copy_list_to_template, copy_template_to_list,
+    next_sort_order,
 )
 from ..schemas import (
     TaskListDetail, CreateTaskListRequest, CreateTaskRequest, CreateSubtaskRequest,
-    UpdateTaskRequest, PublicTask, AuditEntry,
+    UpdateTaskRequest, UpdateTaskListRequest, ReorderRequest, PublicTask, AuditEntry,
     TemplateDetail, SaveAsTemplateRequest, CreateListFromTemplateRequest,
 )
 
@@ -56,13 +57,34 @@ def create_list(
     db.add(tl)
     db.flush()  # get tl.id before adding tasks
 
-    for item in payload.tasks:
-        parent_task = Task(list_id=tl.id, text=item.text)
+    for idx, item in enumerate(payload.tasks):
+        parent_task = Task(list_id=tl.id, text=item.text, sort_order=idx)
         db.add(parent_task)
         db.flush()  # get parent_task.id before adding its subtasks
-        for sub_text in item.subtasks:
-            db.add(Task(list_id=tl.id, text=sub_text, parent_task_id=parent_task.id))
+        for sub_idx, sub_text in enumerate(item.subtasks):
+            db.add(Task(list_id=tl.id, text=sub_text, parent_task_id=parent_task.id, sort_order=sub_idx))
 
+    db.commit()
+    db.refresh(tl)
+    return _to_detail(tl)
+
+
+@router.patch("/lists/{list_id}", response_model=TaskListDetail)
+def update_list(
+    list_id: int,
+    payload: UpdateTaskListRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(auth.require_manager_or_admin),
+):
+    """Rename and/or reschedule a list. `list_key` is left untouched -- it's
+    just the historical creation-time uniqueness key, not a live label."""
+    tl = db.query(TaskList).filter(TaskList.id == list_id).first()
+    if not tl:
+        raise HTTPException(status_code=404, detail="List not found")
+    if payload.name is not None:
+        tl.name = payload.name
+    if payload.date is not None:
+        tl.date = payload.date
     db.commit()
     db.refresh(tl)
     return _to_detail(tl)
@@ -74,6 +96,29 @@ def delete_list(list_id: int, db: Session = Depends(get_db), user: User = Depend
     if not tl:
         raise HTTPException(status_code=404, detail="List not found")
     db.delete(tl)
+    db.commit()
+    return {"ok": True}
+
+
+@router.patch("/lists/{list_id}/tasks/reorder")
+def reorder_tasks(
+    list_id: int,
+    payload: ReorderRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(auth.require_manager_or_admin),
+):
+    """Persists a new drag-and-drop order for this list's top-level tasks.
+    `task_ids` must be exactly the list's current top-level task ids, just
+    reordered -- rejects anything else (missing/extra/foreign ids) rather
+    than silently reconciling."""
+    tl = db.query(TaskList).filter(TaskList.id == list_id).first()
+    if not tl:
+        raise HTTPException(status_code=404, detail="List not found")
+    top_level_ids = {t.id for t in tl.tasks if t.parent_task_id is None}
+    if set(payload.task_ids) != top_level_ids or len(payload.task_ids) != len(top_level_ids):
+        raise HTTPException(status_code=400, detail="task_ids must match this list's current top-level tasks exactly.")
+    for idx, task_id in enumerate(payload.task_ids):
+        db.query(Task).filter(Task.id == task_id).update({"sort_order": idx})
     db.commit()
     return {"ok": True}
 
@@ -90,7 +135,7 @@ def add_task(
     tl = db.query(TaskList).filter(TaskList.id == list_id).first()
     if not tl:
         raise HTTPException(status_code=404, detail="List not found")
-    task = Task(list_id=list_id, text=payload.text)
+    task = Task(list_id=list_id, text=payload.text, sort_order=next_sort_order(db, list_id=list_id))
     db.add(task)
     db.commit()
     db.refresh(task)
@@ -113,7 +158,10 @@ def add_subtask(
     if parent.parent_task_id is not None:
         raise HTTPException(status_code=400, detail="Can't add a subtask to a subtask (one level of nesting only).")
 
-    subtask = Task(list_id=parent.list_id, text=payload.text, parent_task_id=parent.id)
+    subtask = Task(
+        list_id=parent.list_id, text=payload.text, parent_task_id=parent.id,
+        sort_order=next_sort_order(db, parent_task_id=parent.id),
+    )
     db.add(subtask)
     db.flush()
     # A newly added (unchecked) subtask means the master can no longer be "done"
@@ -122,6 +170,27 @@ def add_subtask(
     db.commit()
     db.refresh(parent)
     return serialize_task(parent)
+
+
+@router.patch("/tasks/{task_id}/subtasks/reorder")
+def reorder_subtasks(
+    task_id: int,
+    payload: ReorderRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(auth.require_manager_or_admin),
+):
+    """Persists a new drag-and-drop order for one master task's subtasks.
+    `task_ids` must be exactly that master's current subtask ids, reordered."""
+    parent = db.query(Task).filter(Task.id == task_id).first()
+    if not parent:
+        raise HTTPException(status_code=404, detail="Task not found")
+    child_ids = {c.id for c in parent.children}
+    if set(payload.task_ids) != child_ids or len(payload.task_ids) != len(child_ids):
+        raise HTTPException(status_code=400, detail="task_ids must match this task's current subtasks exactly.")
+    for idx, sub_id in enumerate(payload.task_ids):
+        db.query(Task).filter(Task.id == sub_id).update({"sort_order": idx})
+    db.commit()
+    return {"ok": True}
 
 
 @router.patch("/tasks/{task_id}", response_model=PublicTask)

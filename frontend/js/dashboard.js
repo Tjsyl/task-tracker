@@ -46,9 +46,15 @@ document.getElementById("logout-btn").addEventListener("click", async () => {
 function addTaskBuilderRow() {
   const item = document.createElement("div");
   item.className = "task-builder-item";
+  item.draggable = true;
 
   const itemRow = document.createElement("div");
   itemRow.className = "item-row";
+
+  const handle = document.createElement("span");
+  handle.className = "drag-handle";
+  handle.textContent = "☷";
+  handle.title = "Drag to reorder";
 
   const textInput = document.createElement("input");
   textInput.type = "text";
@@ -65,10 +71,11 @@ function addTaskBuilderRow() {
   removeBtn.textContent = "Remove";
   removeBtn.addEventListener("click", () => item.remove());
 
-  itemRow.append(textInput, addSubBtn, removeBtn);
+  itemRow.append(handle, textInput, addSubBtn, removeBtn);
 
   const subtasksEl = document.createElement("div");
   subtasksEl.className = "task-builder-subtasks";
+  enableDragReorder(subtasksEl, ".item-row");
 
   addSubBtn.addEventListener("click", () => addSubtaskBuilderRow(subtasksEl));
 
@@ -79,6 +86,12 @@ function addTaskBuilderRow() {
 function addSubtaskBuilderRow(subtasksEl) {
   const row = document.createElement("div");
   row.className = "item-row";
+  row.draggable = true;
+
+  const handle = document.createElement("span");
+  handle.className = "drag-handle";
+  handle.textContent = "☷";
+  handle.title = "Drag to reorder";
 
   const input = document.createElement("input");
   input.type = "text";
@@ -90,11 +103,12 @@ function addSubtaskBuilderRow(subtasksEl) {
   removeBtn.textContent = "Remove";
   removeBtn.addEventListener("click", () => row.remove());
 
-  row.append(input, removeBtn);
+  row.append(handle, input, removeBtn);
   subtasksEl.appendChild(row);
 }
 
 document.getElementById("add-task-row-btn").addEventListener("click", addTaskBuilderRow);
+enableDragReorder(taskBuilder, ".task-builder-item");
 
 function collectTaskBuilderPayload() {
   const tasks = [];
@@ -145,9 +159,61 @@ function renderListCard(list) {
   wrap.style.marginBottom = "1rem";
 
   const header = document.createElement("div");
-  header.innerHTML = `<strong>${escapeHtml(list.name)}</strong>
-    <span style="color:var(--muted); font-size:0.85rem;"> &mdash; ${list.date} &middot; key: ${escapeHtml(list.list_key)} &middot; created by ${escapeHtml(list.created_by)}</span>`;
   wrap.appendChild(header);
+
+  function renderHeaderView() {
+    header.innerHTML = "";
+    const info = document.createElement("span");
+    info.innerHTML = `<strong>${escapeHtml(list.name)}</strong>
+      <span style="color:var(--muted); font-size:0.85rem;"> &mdash; ${list.date} &middot; key: ${escapeHtml(list.list_key)} &middot; created by ${escapeHtml(list.created_by)}</span>`;
+    const editBtn = mkButton("Edit name/date", renderHeaderEdit);
+    editBtn.classList.add("small");
+    editBtn.style.marginLeft = "0.6rem";
+    header.append(info, editBtn);
+  }
+
+  function renderHeaderEdit() {
+    header.innerHTML = "";
+    const form = document.createElement("form");
+    form.className = "inline-form";
+
+    const nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.required = true;
+    nameInput.value = list.name;
+
+    const dateInput = document.createElement("input");
+    dateInput.type = "date";
+    dateInput.required = true;
+    dateInput.value = list.date;
+
+    const saveBtn = document.createElement("button");
+    saveBtn.type = "submit";
+    saveBtn.className = "primary";
+    saveBtn.textContent = "Save";
+
+    const cancelBtn = mkButton("Cancel", renderHeaderView);
+    cancelBtn.type = "button";
+
+    form.append(nameInput, dateInput, saveBtn, cancelBtn);
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        const updated = await api.patch(`/manager/lists/${list.id}`, {
+          name: nameInput.value.trim(),
+          date: dateInput.value,
+        });
+        list.name = updated.name;
+        list.date = updated.date;
+        renderHeaderView();
+      } catch (err) {
+        alert("Couldn't save: " + err.message);
+      }
+    });
+    header.appendChild(form);
+  }
+
+  renderHeaderView();
 
   const actions = document.createElement("div");
   actions.className = "row-actions";
@@ -175,9 +241,15 @@ function renderListCard(list) {
   actions.appendChild(deleteBtn);
   wrap.appendChild(actions);
 
+  const tasksEl = document.createElement("div");
+  tasksEl.className = "tasks-area";
   for (const task of list.tasks) {
-    appendTaskBlock(wrap, task);
+    tasksEl.appendChild(buildTaskGroup(task));
   }
+  enableDragReorder(tasksEl, ".task-group", async (ids) => {
+    await api.patch(`/manager/lists/${list.id}/tasks/reorder`, { task_ids: ids });
+  });
+  wrap.appendChild(tasksEl);
 
   const addForm = document.createElement("form");
   addForm.className = "inline-form";
@@ -199,11 +271,46 @@ function renderListCard(list) {
   return wrap;
 }
 
-/* Appends one task row to `container` -- and, if it's a master, its subtask
-   rows right after it (indented, one level only). */
-function appendTaskBlock(container, task, { isSubtask = false } = {}) {
+/* One top-level task + its subtasks (if any), grouped in a single draggable
+   wrapper so reordering top-level tasks moves a master and its subtasks
+   together as one unit. Subtasks get their own nested drag-reorder scope. */
+function buildTaskGroup(task) {
+  const group = document.createElement("div");
+  group.className = "task-group";
+  group.draggable = true;
+  group.dataset.taskId = task.id;
+
+  group.appendChild(buildTaskRow(task));
+
+  if (task.is_master) {
+    const subtasksEl = document.createElement("div");
+    subtasksEl.className = "subtasks-group";
+    for (const sub of task.subtasks) {
+      const subRow = buildTaskRow(sub, { isSubtask: true });
+      subRow.draggable = true;
+      subRow.dataset.taskId = sub.id;
+      subtasksEl.appendChild(subRow);
+    }
+    enableDragReorder(subtasksEl, ".task-row", async (ids) => {
+      await api.patch(`/manager/tasks/${task.id}/subtasks/reorder`, { task_ids: ids });
+    });
+    group.appendChild(subtasksEl);
+  }
+
+  return group;
+}
+
+/* Builds one task row (checkbox/label + actions). Doesn't touch subtasks --
+   see buildTaskGroup for how a master + its subtasks are assembled. */
+function buildTaskRow(task, { isSubtask = false } = {}) {
   const row = document.createElement("div");
   row.className = "task-row" + (task.checked ? " checked" : "") + (isSubtask ? " subtask-row" : "");
+
+  const handle = document.createElement("span");
+  handle.className = "drag-handle";
+  handle.textContent = "☷";
+  handle.title = "Drag to reorder";
+  row.appendChild(handle);
 
   if (!task.is_master) {
     const checkbox = document.createElement("input");
@@ -266,13 +373,7 @@ function appendTaskBlock(container, task, { isSubtask = false } = {}) {
   rowActions.appendChild(deleteBtn);
 
   row.appendChild(rowActions);
-  container.appendChild(row);
-
-  if (task.is_master) {
-    for (const sub of task.subtasks) {
-      appendTaskBlock(container, sub, { isSubtask: true });
-    }
-  }
+  return row;
 }
 
 async function toggleAudit(listId, cardEl) {
@@ -436,6 +537,67 @@ async function loadGlobalAudit() {
     )
     .join("");
   globalAuditContainer.innerHTML = `<table><thead><tr><th>List</th><th>Task</th><th>Action</th><th>When</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+// ---------- drag-to-reorder ----------
+
+/* Generic HTML5 drag-and-drop reordering within `container`, moving whichever
+   direct-child element (matching `itemSelector`) is dragged to wherever it's
+   dropped, live, as it's dragged over other items.
+
+   `onReorder(ids)` (optional) is called after a drop with the resulting
+   ordered array of each item's `data-task-id`, in DOM order -- used to
+   persist the new order via the reorder API endpoints. If omitted, this is
+   purely a visual/DOM reorder (used by the pre-submit task builder, which
+   just reads DOM order at submit time -- nothing to persist until then). */
+function enableDragReorder(container, itemSelector, onReorder = null) {
+  let dragEl = null;
+
+  container.addEventListener("dragstart", (e) => {
+    const item = e.target.closest(itemSelector);
+    if (!item || item.parentElement !== container) {
+      e.preventDefault();
+      return;
+    }
+    // Stop here so a nested drag scope (e.g. reordering a master's subtasks)
+    // doesn't also bubble up and get claimed by an ancestor scope (e.g. the
+    // list's top-level task reorder) at the same time.
+    e.stopPropagation();
+    dragEl = item;
+    item.classList.add("dragging");
+    e.dataTransfer.effectAllowed = "move";
+    try { e.dataTransfer.setData("text/plain", ""); } catch (_) { /* Firefox needs a no-op call */ }
+  });
+
+  container.addEventListener("dragend", () => {
+    if (dragEl) dragEl.classList.remove("dragging");
+    dragEl = null;
+  });
+
+  container.addEventListener("dragover", (e) => {
+    if (!dragEl) return;
+    e.preventDefault();
+    const target = e.target.closest(itemSelector);
+    if (!target || target === dragEl || target.parentElement !== container) return;
+    const rect = target.getBoundingClientRect();
+    const before = e.clientY - rect.top < rect.height / 2;
+    const ref = before ? target : target.nextSibling;
+    if (ref !== dragEl) container.insertBefore(dragEl, ref);
+  });
+
+  container.addEventListener("drop", (e) => {
+    if (!dragEl) return; // this scope didn't own the drag (see dragstart's stopPropagation)
+    e.preventDefault();
+    e.stopPropagation();
+    if (!onReorder) return;
+    const ids = [...container.querySelectorAll(itemSelector)]
+      .filter((el) => el.parentElement === container)
+      .map((el) => Number(el.dataset.taskId));
+    onReorder(ids).catch((err) => {
+      alert("Couldn't save new order: " + err.message);
+      loadLists();
+    });
+  });
 }
 
 // ---------- helpers ----------

@@ -30,6 +30,17 @@ def _run_lightweight_migrations():
             conn.commit()
         finally:
             conn.close()
+    if "sort_order" not in existing_columns:
+        # Existing rows all get 0 -- combined with the "sort_order, id" ordering
+        # used everywhere, that means id (creation order) breaks the tie, so
+        # nothing visually reshuffles on upgrade. Drag-to-reorder rewrites
+        # sort_order for the touched siblings from then on.
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            conn.execute("ALTER TABLE tasks ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
+            conn.commit()
+        finally:
+            conn.close()
 
 
 @app.on_event("startup")

@@ -105,11 +105,30 @@ button.primary:hover { background: var(--accent-dark); }
   align-items: center;
   gap: 0.9rem;
   padding: 0.8rem 0.3rem;
-  border-bottom: 1px solid var(--border);
   font-size: 1.2rem;
 }
 
-.task-row:last-child { border-bottom: none; }
+/* Groups a top-level task with its subtasks so they drag as one unit when
+   reordering the list; the divider between tasks lives on the group now,
+   not on individual rows (a master + its subtasks share one). */
+.task-group { border-bottom: 1px solid var(--border); }
+.task-group:last-child { border-bottom: none; }
+
+.drag-handle {
+  cursor: grab;
+  color: var(--muted);
+  padding: 0 0.2rem;
+  font-size: 1.1rem;
+  line-height: 1;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.drag-handle:active { cursor: grabbing; }
+
+.task-group.dragging, .task-row.dragging, .item-row.dragging, .task-builder-item.dragging {
+  opacity: 0.4;
+}
 
 .task-row input[type="checkbox"] {
   width: 1.6rem;

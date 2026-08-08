@@ -16,6 +16,19 @@ def make_list_key(name: str, on_date: date_, now) -> str:
     return f"{safe_name}-{on_date.isoformat()}-{now.strftime('%H%M%S')}"
 
 
+def next_sort_order(db: Session, *, list_id: Optional[int] = None, parent_task_id: Optional[int] = None) -> int:
+    """Sort_order for a newly-appended sibling task -- either a new top-level
+    task in `list_id`, or a new subtask under `parent_task_id`. Exactly one of
+    the two should be given. Puts the new task at the end of its siblings."""
+    q = db.query(func.max(Task.sort_order))
+    if parent_task_id is not None:
+        q = q.filter(Task.parent_task_id == parent_task_id)
+    else:
+        q = q.filter(Task.list_id == list_id, Task.parent_task_id.is_(None))
+    current_max = q.scalar()
+    return (current_max or 0) + 1
+
+
 # ---------- Master / subtask cascade ----------
 
 def recompute_master_state(db: Session, parent: Task) -> bool:

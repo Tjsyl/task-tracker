@@ -1,5 +1,7 @@
 """Pydantic request/response models."""
 from datetime import datetime, date
+from datetime import date as _date  # aliased for use inside fields literally named `date`
+                                     # with a default -- see UpdateTaskListRequest's comment.
 from typing import Optional, List, Literal
 
 from pydantic import BaseModel, Field, ConfigDict
@@ -93,6 +95,30 @@ class CreateSubtaskRequest(BaseModel):
 class UpdateTaskRequest(BaseModel):
     text: Optional[str] = Field(default=None, min_length=1, max_length=500)
     checked: Optional[bool] = None
+
+
+class UpdateTaskListRequest(BaseModel):
+    """Rename and/or reschedule an existing list. `list_key` (the internal
+    uniqueness key) intentionally never changes here -- it's just a historical
+    creation-time identifier, not a live label.
+
+    Uses the `_date`-aliased import for the annotation: a field named `date`
+    with a `= None` default shadows the module-level `date` type with its own
+    (now class-attribute) value at class-body-eval time -- pydantic then
+    resolves the annotation against that shadowed name and silently types the
+    field as NoneType instead of Optional[date] (confirmed live: it will
+    accept `{"date": null}` but reject any real date string). Bare `date:
+    date` fields elsewhere in this file are fine since they have no default,
+    so no attribute-with-that-name ever gets written to the class dict."""
+    name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    date: Optional[_date] = None
+
+
+class ReorderRequest(BaseModel):
+    """New drag-and-drop order for a set of sibling tasks -- either a list's
+    top-level tasks, or one master task's subtasks. Must contain exactly the
+    current sibling set's ids, just reordered (enforced server-side)."""
+    task_ids: List[int] = Field(min_length=1)
 
 
 class AuditEntry(BaseModel):
