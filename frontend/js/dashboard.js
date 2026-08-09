@@ -15,6 +15,13 @@ const taskBuilder = document.getElementById("task-builder");
 
 let currentRole = null;
 
+// Accordion state for the "Task lists" section: at most one list expanded at
+// a time, and at most one audit trail (nested inside the currently-expanded
+// list) open at a time. Kept at module scope so it survives the full
+// re-render that loadLists() does on every task edit/checkbox toggle.
+let expandedListId = null;
+let expandedAuditListId = null;
+
 async function init() {
   try {
     const me = await api.get("/auth/me");
@@ -146,34 +153,71 @@ async function loadLists() {
   listsContainer.innerHTML = "";
   if (lists.length === 0) {
     listsContainer.innerHTML = `<p class="empty-state">No task lists yet.</p>`;
+    expandedListId = null;
+    expandedAuditListId = null;
     return;
+  }
+  // If the previously-expanded list was deleted (or this is a fresh load),
+  // don't carry over stale accordion state.
+  if (expandedListId !== null && !lists.some((l) => l.id === expandedListId)) {
+    expandedListId = null;
+    expandedAuditListId = null;
   }
   for (const list of lists) {
     listsContainer.appendChild(renderListCard(list));
   }
 }
 
+/* Each task list renders collapsed by default behind a `>` caret. Only one
+   list is expanded at a time (accordion) -- expanding a list collapses
+   whichever other one was open, and always closes any open Audit Trail
+   rollup too (that's nested one level further in, see below). */
 function renderListCard(list) {
   const wrap = document.createElement("div");
   wrap.className = "task-card";
   wrap.style.marginBottom = "1rem";
 
-  const header = document.createElement("div");
-  wrap.appendChild(header);
+  const isExpanded = list.id === expandedListId;
 
-  function renderHeaderView() {
-    header.innerHTML = "";
-    const info = document.createElement("span");
-    info.innerHTML = `<strong>${escapeHtml(list.name)}</strong>
-      <span style="color:var(--muted); font-size:0.85rem;"> &mdash; ${list.date} &middot; key: ${escapeHtml(list.list_key)} &middot; created by ${escapeHtml(list.created_by)}</span>`;
-    const editBtn = mkButton("Edit name/date", renderHeaderEdit);
+  const headerRow = document.createElement("div");
+  headerRow.className = "list-card-header";
+
+  const caretBtn = document.createElement("button");
+  caretBtn.type = "button";
+  caretBtn.className = "caret-btn" + (isExpanded ? " expanded" : "");
+  caretBtn.textContent = ">";
+  caretBtn.setAttribute("aria-label", isExpanded ? "Collapse task list" : "Expand task list");
+  caretBtn.addEventListener("click", () => {
+    expandedListId = expandedListId === list.id ? null : list.id;
+    expandedAuditListId = null; // accordion selection changed -- any open audit trail closes with it
+    loadLists();
+  });
+
+  const summary = document.createElement("span");
+  summary.innerHTML = `<strong>${escapeHtml(list.name)}</strong>
+    <span style="color:var(--muted); font-size:0.85rem;"> &mdash; ${list.date} &middot; key: ${escapeHtml(list.list_key)} &middot; created by ${escapeHtml(list.created_by)}</span>`;
+
+  headerRow.append(caretBtn, summary);
+  wrap.appendChild(headerRow);
+
+  const body = document.createElement("div");
+  body.className = "list-card-body";
+  body.style.display = isExpanded ? "block" : "none";
+  wrap.appendChild(body);
+
+  // ---- rename (name/date), lives in the expanded body ----
+  const renameArea = document.createElement("div");
+  body.appendChild(renameArea);
+
+  function renderRenameView() {
+    renameArea.innerHTML = "";
+    const editBtn = mkButton("Edit name/date", renderRenameEdit);
     editBtn.classList.add("small");
-    editBtn.style.marginLeft = "0.6rem";
-    header.append(info, editBtn);
+    renameArea.appendChild(editBtn);
   }
 
-  function renderHeaderEdit() {
-    header.innerHTML = "";
+  function renderRenameEdit() {
+    renameArea.innerHTML = "";
     const form = document.createElement("form");
     form.className = "inline-form";
 
@@ -192,7 +236,7 @@ function renderListCard(list) {
     saveBtn.className = "primary";
     saveBtn.textContent = "Save";
 
-    const cancelBtn = mkButton("Cancel", renderHeaderView);
+    const cancelBtn = mkButton("Cancel", renderRenameView);
     cancelBtn.type = "button";
 
     form.append(nameInput, dateInput, saveBtn, cancelBtn);
@@ -205,21 +249,22 @@ function renderListCard(list) {
         });
         list.name = updated.name;
         list.date = updated.date;
-        renderHeaderView();
+        summary.innerHTML = `<strong>${escapeHtml(list.name)}</strong>
+          <span style="color:var(--muted); font-size:0.85rem;"> &mdash; ${list.date} &middot; key: ${escapeHtml(list.list_key)} &middot; created by ${escapeHtml(list.created_by)}</span>`;
+        renderRenameView();
       } catch (err) {
         alert("Couldn't save: " + err.message);
       }
     });
-    header.appendChild(form);
+    renameArea.appendChild(form);
   }
 
-  renderHeaderView();
+  renderRenameView();
 
   const actions = document.createElement("div");
   actions.className = "row-actions";
   actions.style.margin = "0.5rem 0";
 
-  const auditBtn = mkButton("View audit trail", () => toggleAudit(list.id, wrap));
   const saveTemplateBtn = mkButton("Save as template", async () => {
     const name = prompt("Template name:", list.name);
     if (!name || !name.trim()) return;
@@ -236,10 +281,9 @@ function renderListCard(list) {
     await api.delete(`/manager/lists/${list.id}`);
     loadLists();
   }, true);
-  actions.appendChild(auditBtn);
   actions.appendChild(saveTemplateBtn);
   actions.appendChild(deleteBtn);
-  wrap.appendChild(actions);
+  body.appendChild(actions);
 
   const tasksEl = document.createElement("div");
   tasksEl.className = "tasks-area";
@@ -249,7 +293,7 @@ function renderListCard(list) {
   enableDragReorder(tasksEl, ".task-group", async (ids) => {
     await api.patch(`/manager/lists/${list.id}/tasks/reorder`, { task_ids: ids });
   });
-  wrap.appendChild(tasksEl);
+  body.appendChild(tasksEl);
 
   const addForm = document.createElement("form");
   addForm.className = "inline-form";
@@ -260,13 +304,51 @@ function renderListCard(list) {
     await api.post(`/manager/lists/${list.id}/tasks`, { text: input.value.trim() });
     loadLists();
   });
-  wrap.appendChild(addForm);
+  body.appendChild(addForm);
+
+  // ---- nested "Audit Trail" rollup, inside this list's expanded body ----
+  const isAuditExpanded = expandedAuditListId === list.id;
+
+  const auditToggleRow = document.createElement("div");
+  auditToggleRow.className = "audit-toggle-row";
+
+  const auditCaretBtn = document.createElement("button");
+  auditCaretBtn.type = "button";
+  auditCaretBtn.className = "caret-btn" + (isAuditExpanded ? " expanded" : "");
+  auditCaretBtn.textContent = ">";
+  auditCaretBtn.tabIndex = -1; // the row itself is the click/focus target
+
+  const auditLabel = document.createElement("span");
+  auditLabel.className = "audit-toggle-label";
+  auditLabel.textContent = "Audit Trail";
 
   const auditDiv = document.createElement("div");
   auditDiv.className = "audit-trail";
-  auditDiv.style.display = "none";
-  auditDiv.dataset.listId = list.id;
-  wrap.appendChild(auditDiv);
+  auditDiv.style.display = isAuditExpanded ? "block" : "none";
+
+  async function refreshAudit() {
+    auditDiv.innerHTML = "Loading&hellip;";
+    const entries = await api.get(`/manager/lists/${list.id}/audit`);
+    auditDiv.innerHTML = renderAuditTable(entries);
+  }
+
+  auditToggleRow.addEventListener("click", async () => {
+    if (expandedAuditListId === list.id) {
+      expandedAuditListId = null;
+      auditCaretBtn.classList.remove("expanded");
+      auditDiv.style.display = "none";
+      return;
+    }
+    expandedAuditListId = list.id;
+    auditCaretBtn.classList.add("expanded");
+    auditDiv.style.display = "block";
+    await refreshAudit();
+  });
+
+  auditToggleRow.append(auditCaretBtn, auditLabel);
+  body.append(auditToggleRow, auditDiv);
+
+  if (isAuditExpanded) refreshAudit();
 
   return wrap;
 }
@@ -376,17 +458,6 @@ function buildTaskRow(task, { isSubtask = false } = {}) {
   return row;
 }
 
-async function toggleAudit(listId, cardEl) {
-  const auditDiv = cardEl.querySelector(".audit-trail");
-  if (auditDiv.style.display !== "none") {
-    auditDiv.style.display = "none";
-    return;
-  }
-  const entries = await api.get(`/manager/lists/${listId}/audit`);
-  auditDiv.innerHTML = renderAuditTable(entries);
-  auditDiv.style.display = "block";
-}
-
 function renderAuditTable(entries) {
   if (entries.length === 0) return `<p class="empty-state">No audit entries yet.</p>`;
   const rows = entries
@@ -406,47 +477,75 @@ async function loadTemplates() {
     templatesContainer.innerHTML = `<p class="empty-state">No templates saved yet. Use "Save as template" on any task list above.</p>`;
     return;
   }
-  for (const template of templates) {
-    templatesContainer.appendChild(renderTemplateCard(template));
-  }
+  templatesContainer.appendChild(renderTemplatePicker(templates));
 }
 
-function renderTemplateCard(template) {
+/* Single dropdown listing every saved template by name. Selecting one
+   reveals a name (for the new list, not a template rename)/date/Deploy
+   form. Template save/delete stays available here too -- "Save as
+   template" is still on each task list card (unchanged), and "Delete
+   template" now lives next to Deploy since the old per-template card it
+   used to live on no longer exists. */
+function renderTemplatePicker(templates) {
   const wrap = document.createElement("div");
-  wrap.className = "task-card";
-  wrap.style.marginBottom = "1rem";
 
-  const taskSummary = template.tasks
-    .map((t) => (t.subtasks.length ? `${t.text} (${t.subtasks.length} subtask${t.subtasks.length === 1 ? "" : "s"})` : t.text))
-    .join(", ") || "(no tasks)";
+  const select = document.createElement("select");
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Select a template…";
+  select.appendChild(placeholder);
+  for (const t of templates) {
+    const opt = document.createElement("option");
+    opt.value = t.id;
+    opt.textContent = t.name;
+    select.appendChild(opt);
+  }
+  wrap.appendChild(select);
 
-  const header = document.createElement("div");
-  header.innerHTML = `<strong>${escapeHtml(template.name)}</strong>
-    <span style="color:var(--muted); font-size:0.85rem;"> &mdash; ${escapeHtml(taskSummary)}</span>`;
-  wrap.appendChild(header);
+  const deployArea = document.createElement("div");
+  deployArea.style.marginTop = "0.8rem";
+  wrap.appendChild(deployArea);
 
-  const actions = document.createElement("div");
-  actions.className = "row-actions";
-  actions.style.margin = "0.5rem 0";
+  select.addEventListener("change", () => {
+    deployArea.innerHTML = "";
+    if (!select.value) return;
+    const template = templates.find((t) => String(t.id) === select.value);
+    deployArea.appendChild(renderDeployForm(template));
+  });
+
+  return wrap;
+}
+
+function renderDeployForm(template) {
+  const form = document.createElement("form");
+  form.className = "inline-form";
+
+  const nameInput = document.createElement("input");
+  nameInput.type = "text";
+  nameInput.placeholder = "New list's name";
+  nameInput.value = template.name;
+  nameInput.required = true;
+
+  const dateInput = document.createElement("input");
+  dateInput.type = "date";
+  dateInput.required = true;
+
+  const deployBtn = document.createElement("button");
+  deployBtn.type = "submit";
+  deployBtn.className = "primary";
+  deployBtn.textContent = "Deploy";
 
   const deleteBtn = mkButton("Delete template", async () => {
     if (!confirm(`Delete template "${template.name}"? This doesn't affect any lists already created from it.`)) return;
     await api.delete(`/manager/templates/${template.id}`);
     loadTemplates();
   }, true);
-  actions.appendChild(deleteBtn);
-  wrap.appendChild(actions);
+  deleteBtn.type = "button";
+  deleteBtn.classList.add("small");
 
-  const createForm = document.createElement("form");
-  createForm.className = "inline-form";
-  createForm.innerHTML = `
-    <input type="text" placeholder="List name" value="${escapeHtml(template.name)}" required>
-    <input type="date" required>
-    <button type="submit" class="primary">Create list from template</button>
-  `;
-  createForm.addEventListener("submit", async (e) => {
+  form.append(nameInput, dateInput, deployBtn, deleteBtn);
+  form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const [nameInput, dateInput] = createForm.querySelectorAll("input");
     try {
       await api.post(`/manager/templates/${template.id}/create-list`, {
         name: nameInput.value.trim(),
@@ -458,9 +557,8 @@ function renderTemplateCard(template) {
       alert("Couldn't create list from template: " + err.message);
     }
   });
-  wrap.appendChild(createForm);
 
-  return wrap;
+  return form;
 }
 
 // ---------- Admin: users ----------

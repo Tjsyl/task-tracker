@@ -263,3 +263,51 @@ button.small.danger { color: var(--danger); border-color: var(--danger); }
   color: var(--accent);
   cursor: pointer;
 }
+
+/* Collapsible task-list cards (accordion) + nested Audit Trail rollup */
+.list-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.caret-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.2rem 0.3rem;
+  flex-shrink: 0;
+  transform: rotate(0deg);
+  transition: transform 0.15s ease;
+}
+
+.caret-btn.expanded {
+  transform: rotate(90deg);
+}
+
+.list-card-body {
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+}
+
+.audit-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 1.2rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.audit-toggle-label {
+  font-weight: 600;
+}
+
+.audit-trail {
+  margin-top: 0.6rem;
+  margin-left: 1.9rem;
+}
