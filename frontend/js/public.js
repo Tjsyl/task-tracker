@@ -9,9 +9,32 @@ const dateSelect = document.getElementById("date-select");
 const tabsEl = document.getElementById("tabs");
 const taskAreaEl = document.getElementById("task-area");
 const homeBtn = document.getElementById("home-btn");
+const footerNoteEl = document.getElementById("footer-note");
 
 let currentLists = [];
 let activeListId = null;
+
+/* Footer message reflects whether the LIST CURRENTLY ON SCREEN has any open
+   (unchecked) tasks left -- per-list, not just "is anything selected". A
+   master task has no checked state of its own; it's "open" iff any of its
+   subtasks still is. Re-run this any time the active list's data changes
+   (selecting a list, or checking/unchecking one of its tasks). */
+function listHasOpenTasks(list) {
+  return list.tasks.some((task) =>
+    task.is_master ? task.subtasks.some((s) => !s.checked) : !task.checked
+  );
+}
+
+function setFooterNote(hasOpenTasks) {
+  footerNoteEl.textContent = hasOpenTasks
+    ? "Oh, you got some work to do..."
+    : "Well, looks like you're free! For now...";
+}
+
+function refreshFooterNoteForActiveList() {
+  const list = currentLists.find((l) => l.id === activeListId);
+  setFooterNote(list ? listHasOpenTasks(list) : false);
+}
 
 function resetToHome() {
   dateSelect.value = "";
@@ -19,6 +42,7 @@ function resetToHome() {
   taskAreaEl.innerHTML = "";
   currentLists = [];
   activeListId = null;
+  setFooterNote(false);
 }
 
 homeBtn.addEventListener("click", resetToHome);
@@ -40,11 +64,15 @@ async function onDateChange() {
   const date = dateSelect.value;
   tabsEl.innerHTML = "";
   taskAreaEl.innerHTML = "";
-  if (!date) return;
+  if (!date) {
+    setFooterNote(false);
+    return;
+  }
 
   currentLists = await api.get(`/public/lists?for_date=${encodeURIComponent(date)}`);
   if (currentLists.length === 0) {
     taskAreaEl.innerHTML = `<p class="empty-state">No task lists for this date.</p>`;
+    setFooterNote(false);
     return;
   }
   renderTabs();
@@ -66,6 +94,7 @@ function selectList(listId) {
   activeListId = listId;
   renderTabs();
   renderTasks();
+  refreshFooterNoteForActiveList();
 }
 
 function renderTasks() {
@@ -128,6 +157,7 @@ async function toggleTask(taskId) {
     const { task: updated, parent } = await api.post(`/public/tasks/${taskId}/toggle`);
     applyTaskUpdate(updated);
     if (parent) applyTaskUpdate(parent);
+    refreshFooterNoteForActiveList();
   } catch (err) {
     alert("Couldn't save that change: " + err.message);
   }
@@ -156,5 +186,21 @@ function applyTaskUpdate(updated) {
   }
 }
 
+function todayStr() {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
 dateSelect.addEventListener("change", onDateChange);
-loadDates();
+loadDates().then(() => {
+  // Auto-select today's date on load if it has a list -- otherwise leave the
+  // dropdown on its placeholder, same as if today just isn't in the options.
+  const today = todayStr();
+  const hasToday = [...dateSelect.options].some((o) => o.value === today);
+  if (hasToday) {
+    dateSelect.value = today;
+    onDateChange();
+  }
+});

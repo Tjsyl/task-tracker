@@ -22,6 +22,12 @@ let currentRole = null;
 let expandedListId = null;
 let expandedAuditListId = null;
 
+// Right-pointing chevron; CSS rotates it 90deg (to point down) when the
+// button carries the "expanded" class. Shared by the list-card caret and
+// the nested Audit Trail caret.
+const CARET_ICON_SVG =
+  '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 3 11 8 5 13"></polyline></svg>';
+
 async function init() {
   try {
     const me = await api.get("/auth/me");
@@ -185,7 +191,7 @@ function renderListCard(list) {
   const caretBtn = document.createElement("button");
   caretBtn.type = "button";
   caretBtn.className = "caret-btn" + (isExpanded ? " expanded" : "");
-  caretBtn.textContent = ">";
+  caretBtn.innerHTML = CARET_ICON_SVG;
   caretBtn.setAttribute("aria-label", isExpanded ? "Collapse task list" : "Expand task list");
   caretBtn.addEventListener("click", () => {
     expandedListId = expandedListId === list.id ? null : list.id;
@@ -315,7 +321,7 @@ function renderListCard(list) {
   const auditCaretBtn = document.createElement("button");
   auditCaretBtn.type = "button";
   auditCaretBtn.className = "caret-btn" + (isAuditExpanded ? " expanded" : "");
-  auditCaretBtn.textContent = ">";
+  auditCaretBtn.innerHTML = CARET_ICON_SVG;
   auditCaretBtn.tabIndex = -1; // the row itself is the click/focus target
 
   const auditLabel = document.createElement("span");

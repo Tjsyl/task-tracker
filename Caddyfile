@@ -8,6 +8,11 @@
 	# Everything else is the static frontend.
 	handle {
 		root * /srv/frontend
+		# Household kiosk app pushed to frequently across several devices --
+		# iOS Safari in particular caches static JS/CSS/HTML aggressively
+		# when no explicit Cache-Control is set, so force revalidation on
+		# every load instead of relying on everyone knowing to hard-refresh.
+		header Cache-Control "no-cache, no-store, must-revalidate"
 		file_server
 		try_files {path} /index.html
 	}

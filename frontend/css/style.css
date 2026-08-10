@@ -164,8 +164,10 @@ button.primary:hover { background: var(--accent-dark); }
 
 .footer-note {
   text-align: center;
-  color: var(--muted);
+  color: #757166; /* slightly darker than var(--muted) #8a8578 */
   margin-top: 2rem;
+  font-size: 1.075rem; /* root is 18px/13.5pt -- this is +1pt */
+  font-weight: 600;
   font-style: italic;
 }
 
@@ -272,19 +274,28 @@ button.small.danger { color: var(--danger); border-color: var(--danger); }
 }
 
 .caret-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: none;
   border: none;
   color: var(--muted);
-  font-size: 1.1rem;
-  line-height: 1;
   cursor: pointer;
-  padding: 0.2rem 0.3rem;
+  padding: 0.3rem;
   flex-shrink: 0;
+  transition: color 0.15s ease;
+}
+
+.caret-btn svg {
   transform: rotate(0deg);
   transition: transform 0.15s ease;
 }
 
 .caret-btn.expanded {
+  color: var(--accent);
+}
+
+.caret-btn.expanded svg {
   transform: rotate(90deg);
 }
 
