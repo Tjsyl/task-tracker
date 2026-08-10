@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<script>(function(){if(localStorage.getItem("theme")==="dark")document.documentElement.setAttribute("data-theme","dark");})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Family Task Tracker</title>
 <link rel="icon" href="icons/icon-checkmark.svg" type="image/svg+xml">
@@ -12,7 +13,10 @@
 <body>
   <div class="topbar">
     <button id="home-btn">Home</button>
-    <a class="button" href="login.html">Login</a>
+    <div>
+      <button id="theme-toggle-btn" class="small"></button>
+      <a class="button" href="login.html">Login</a>
+    </div>
   </div>
 
   <main>
@@ -32,6 +36,7 @@
   </main>
 
   <script src="js/api.js"></script>
+  <script src="js/theme.js"></script>
   <script src="js/public.js"></script>
 </body>
 </html>

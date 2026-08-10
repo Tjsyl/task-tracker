@@ -10,6 +10,23 @@
   font-size: 18px;
 }
 
+/* Dark mode -- toggled via js/theme.js, which sets/removes this attribute
+   on <html> and persists the choice in localStorage. Every rule in this
+   file already reads colors through these custom properties, so redefining
+   them here is enough to reskin the whole app; the only exceptions are a
+   handful of hardcoded colors below (footer-note, role tags) that get
+   their own dark-mode overrides further down. */
+[data-theme="dark"] {
+  --bg: #1c1c1e;
+  --card-bg: #2a2a2d;
+  --ink: #f0f0f0;
+  --muted: #a8a8ac;
+  --accent: #2f5fa8;
+  --accent-dark: #1f4470;
+  --danger: #e0665a;
+  --border: #3d3d40;
+}
+
 * { box-sizing: border-box; }
 
 body {
@@ -18,6 +35,7 @@ body {
   background: var(--bg);
   color: var(--ink);
   min-height: 100vh;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .topbar {
@@ -171,6 +189,12 @@ button.primary:hover { background: var(--accent-dark); }
   font-style: italic;
 }
 
+[data-theme="dark"] .footer-note {
+  color: #c9c2ae; /* same warm hue family as light mode's footer-note, but
+                      lighter (more prominent) than dark mode's --muted,
+                      mirroring the light-mode "darker than --muted" relationship */
+}
+
 .empty-state {
   text-align: center;
   color: var(--muted);
@@ -216,8 +240,11 @@ th { color: var(--muted); font-weight: 600; }
 .inline-form input, .inline-form select { flex: 1; min-width: 120px; }
 
 .tag { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 999px; background: var(--border); font-size: 0.8rem; }
-.tag.admin { background: #e7d9c9; }
-.tag.manager { background: #d9e7df; }
+.tag.admin { background: #e7d9c9; color: #2c2a26; }
+.tag.manager { background: #d9e7df; color: #2c2a26; }
+
+[data-theme="dark"] .tag.admin { background: #5c4a30; color: #f0f0f0; }
+[data-theme="dark"] .tag.manager { background: #2d4a3a; color: #f0f0f0; }
 
 /* Task-builder (list creation form) */
 .task-builder-item {
